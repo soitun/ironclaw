@@ -393,13 +393,20 @@ pub fn validate_fetch_url(url_str: &str) -> Result<(), ToolError> {
     }
 
     let host = parsed
-        .host_str()
+        .host()
         .ok_or_else(|| ToolError::ExecutionFailed("URL has no host".to_string()))?;
 
     // Check if host is an IP address and reject private ranges.
+    // Use url::Host variants to get proper IpAddr values -- host_str()
+    // returns bracketed IPv6 (e.g. "[::1]") which IpAddr cannot parse.
     // Unwrap IPv4-mapped IPv6 addresses (e.g. ::ffff:192.168.1.1) to catch
     // SSRF bypasses that encode private IPv4 addresses as IPv6.
-    if let Ok(raw_ip) = host.parse::<std::net::IpAddr>() {
+    let raw_ip = match &host {
+        url::Host::Ipv4(v4) => Some(std::net::IpAddr::V4(*v4)),
+        url::Host::Ipv6(v6) => Some(std::net::IpAddr::V6(*v6)),
+        url::Host::Domain(_) => None,
+    };
+    if let Some(raw_ip) = raw_ip {
         let ip = match raw_ip {
             std::net::IpAddr::V6(v6) => v6
                 .to_ipv4_mapped()
@@ -416,7 +423,7 @@ pub fn validate_fetch_url(url_str: &str) -> Result<(), ToolError> {
     }
 
     // Reject common internal hostnames
-    let host_lower = host.to_lowercase();
+    let host_lower = host.to_string().to_lowercase();
     if host_lower == "localhost"
         || host_lower == "metadata.google.internal"
         || host_lower.ends_with(".internal")
@@ -1059,49 +1066,50 @@ mod tests {
 
     #[test]
     fn test_is_private_ip_blocks_ipv4_mapped_ipv6() {
-        // Test the IPv4-mapped unwrapping logic: validate_fetch_url parses the
-        // IP, checks if it's V6, calls to_ipv4_mapped(), then checks the
-        // unwrapped V4 address against private/loopback.
-        //
-        // NOTE: url::Url::host_str() returns bracketed IPv6 (e.g. "[::ffff:7f00:1]")
-        // which std IpAddr cannot parse. This means validate_fetch_url currently
-        // does NOT catch IPv6 addresses in URLs -- the parse::<IpAddr>() silently
-        // fails and falls through. This is a known gap (tracked separately).
-        //
-        // Here we test the underlying is_private_ip + to_ipv4_mapped logic
-        // directly to ensure the detection works when given a proper IpAddr.
-        use std::net::{IpAddr, Ipv6Addr};
+        // Test the IPv4-mapped unwrapping logic end-to-end through
+        // validate_fetch_url. IPv6 URLs like https://[::ffff:127.0.0.1]/path
+        // must be correctly detected as private/loopback.
 
-        // ::ffff:127.0.0.1 mapped -> 127.0.0.1 (loopback)
-        let v6_loopback: Ipv6Addr = "::ffff:127.0.0.1".parse().unwrap();
-        let mapped = v6_loopback.to_ipv4_mapped().expect("should be IPv4-mapped");
+        // ::ffff:127.0.0.1 mapped -> 127.0.0.1 (loopback) -- must be blocked
+        let err =
+            super::validate_fetch_url("https://[::ffff:127.0.0.1]/skill.md").unwrap_err();
         assert!(
-            IpAddr::V4(mapped).is_loopback(),
-            "Mapped ::ffff:127.0.0.1 should be loopback"
+            err.to_string().contains("private") || err.to_string().contains("loopback"),
+            "IPv4-mapped loopback should be blocked, got: {}",
+            err
         );
 
-        // ::ffff:192.168.1.1 mapped -> 192.168.1.1 (private)
-        let v6_private: Ipv6Addr = "::ffff:192.168.1.1".parse().unwrap();
-        let mapped = v6_private.to_ipv4_mapped().expect("should be IPv4-mapped");
+        // ::ffff:192.168.1.1 mapped -> 192.168.1.1 (private) -- must be blocked
+        let err =
+            super::validate_fetch_url("https://[::ffff:192.168.1.1]/skill.md").unwrap_err();
         assert!(
-            super::is_private_ip(&IpAddr::V4(mapped)),
-            "Mapped ::ffff:192.168.1.1 should be private"
+            err.to_string().contains("private") || err.to_string().contains("loopback"),
+            "IPv4-mapped private should be blocked, got: {}",
+            err
         );
 
-        // ::ffff:10.0.0.1 mapped -> 10.0.0.1 (private)
-        let v6_ten: Ipv6Addr = "::ffff:10.0.0.1".parse().unwrap();
-        let mapped = v6_ten.to_ipv4_mapped().expect("should be IPv4-mapped");
+        // ::ffff:10.0.0.1 mapped -> 10.0.0.1 (private) -- must be blocked
+        let err =
+            super::validate_fetch_url("https://[::ffff:10.0.0.1]/skill.md").unwrap_err();
         assert!(
-            super::is_private_ip(&IpAddr::V4(mapped)),
-            "Mapped ::ffff:10.0.0.1 should be private"
+            err.to_string().contains("private") || err.to_string().contains("loopback"),
+            "IPv4-mapped 10.x should be blocked, got: {}",
+            err
         );
 
-        // ::ffff:8.8.8.8 mapped -> 8.8.8.8 (public, should NOT be private)
-        let v6_public: Ipv6Addr = "::ffff:8.8.8.8".parse().unwrap();
-        let mapped = v6_public.to_ipv4_mapped().expect("should be IPv4-mapped");
+        // ::ffff:8.8.8.8 mapped -> 8.8.8.8 (public) -- must be allowed
         assert!(
-            !super::is_private_ip(&IpAddr::V4(mapped)),
-            "Mapped ::ffff:8.8.8.8 should NOT be private"
+            super::validate_fetch_url("https://[::ffff:8.8.8.8]/skill.md").is_ok(),
+            "IPv4-mapped public IP should be allowed"
+        );
+
+        // Pure IPv6 loopback ::1 -- must be blocked
+        let err =
+            super::validate_fetch_url("https://[::1]/skill.md").unwrap_err();
+        assert!(
+            err.to_string().contains("private") || err.to_string().contains("loopback"),
+            "IPv6 loopback should be blocked, got: {}",
+            err
         );
     }
 
