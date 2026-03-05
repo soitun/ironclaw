@@ -65,6 +65,10 @@ pub struct ReasoningContext {
     /// When true, force a text-only response (ignore available tools).
     /// Used by the agentic loop to guarantee termination near the iteration limit.
     pub force_text: bool,
+    /// Pre-built system prompt. When set, `respond_with_tools` uses this directly
+    /// instead of calling `build_system_prompt_with_tools`. Allows callers to build
+    /// the prompt once and reuse it across iterations.
+    pub system_prompt: Option<String>,
 }
 
 impl ReasoningContext {
@@ -77,6 +81,7 @@ impl ReasoningContext {
             current_state: None,
             metadata: std::collections::HashMap::new(),
             force_text: false,
+            system_prompt: None,
         }
     }
 
@@ -95,6 +100,13 @@ impl ReasoningContext {
     /// Set available tools.
     pub fn with_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
         self.available_tools = tools;
+        self
+    }
+
+    /// Set a pre-built system prompt. When set, `respond_with_tools` uses this
+    /// directly instead of building one from `Reasoning` state.
+    pub fn with_system_prompt(mut self, prompt: String) -> Self {
+        self.system_prompt = Some(prompt);
         self
     }
 
@@ -463,7 +475,10 @@ Respond in JSON format:
         &self,
         context: &ReasoningContext,
     ) -> Result<RespondOutput, LlmError> {
-        let system_prompt = self.build_conversation_prompt(context);
+        let system_prompt = match context.system_prompt {
+            Some(ref prompt) => prompt.clone(),
+            None => self.build_system_prompt_with_tools(&context.available_tools),
+        };
 
         let mut messages = vec![ChatMessage::system(system_prompt)];
         messages.extend(context.messages.clone());
@@ -612,12 +627,15 @@ Respond with a JSON plan in this format:
         )
     }
 
-    fn build_conversation_prompt(&self, context: &ReasoningContext) -> String {
-        let tools_section = if context.available_tools.is_empty() {
+    /// Build the system prompt with the given tool definitions.
+    ///
+    /// Callers can invoke this once before a loop and pass the result via
+    /// `ReasoningContext::system_prompt` to avoid rebuilding each iteration.
+    pub fn build_system_prompt_with_tools(&self, tools: &[ToolDefinition]) -> String {
+        let tools_section = if tools.is_empty() {
             String::new()
         } else {
-            let tool_list: Vec<String> = context
-                .available_tools
+            let tool_list: Vec<String> = tools
                 .iter()
                 .map(|t| format!("  - {}: {}", t.name, t.description))
                 .collect();
@@ -653,7 +671,7 @@ Respond with a JSON plan in this format:
         let channel_section = self.build_channel_section();
 
         // Extension guidance (only when extension tools are available)
-        let extensions_section = self.build_extensions_section(context);
+        let extensions_section = self.build_extensions_section_for_tools(tools);
 
         // Runtime context (agent metadata)
         let runtime_section = self.build_runtime_section();
@@ -712,12 +730,9 @@ Example:
         )
     }
 
-    fn build_extensions_section(&self, context: &ReasoningContext) -> String {
+    fn build_extensions_section_for_tools(&self, tools: &[ToolDefinition]) -> String {
         // Only include when the extension management tools are available
-        let has_ext_tools = context
-            .available_tools
-            .iter()
-            .any(|t| t.name == "tool_search");
+        let has_ext_tools = tools.iter().any(|t| t.name == "tool_search");
         if !has_ext_tools {
             return String::new();
         }
@@ -1840,5 +1855,72 @@ That's my plan."#;
         let calls = recover_tool_calls_from_content(content, &tools);
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "tool_list");
+    }
+
+    // ---- System prompt building tests (issue #565) ----
+
+    fn make_test_reasoning() -> Reasoning {
+        use crate::config::SafetyConfig;
+        use crate::safety::SafetyLayer;
+        use crate::testing::StubLlm;
+        let llm = Arc::new(StubLlm::new("test"));
+        let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
+            max_output_length: 100_000,
+            injection_check_enabled: false,
+        }));
+        Reasoning::new(llm, safety)
+    }
+
+    #[test]
+    fn test_system_prompt_with_tools_contains_tools_section() {
+        let reasoning = make_test_reasoning();
+        let tool_defs = vec![ToolDefinition {
+            name: "echo".to_string(),
+            description: "Echoes input".to_string(),
+            parameters: serde_json::json!({}),
+        }];
+
+        let prompt = reasoning.build_system_prompt_with_tools(&tool_defs);
+        assert!(
+            prompt.contains("## Available Tools"),
+            "Prompt with tools should contain Available Tools section"
+        );
+        assert!(
+            prompt.contains("echo: Echoes input"),
+            "Prompt with tools should list the echo tool"
+        );
+    }
+
+    #[test]
+    fn test_system_prompt_without_tools_omits_tools_section() {
+        let reasoning = make_test_reasoning();
+
+        let prompt = reasoning.build_system_prompt_with_tools(&[]);
+        assert!(
+            !prompt.contains("## Available Tools"),
+            "Prompt without tools should not contain Available Tools section"
+        );
+    }
+
+    #[test]
+    fn test_system_prompt_is_deterministic() {
+        let reasoning = make_test_reasoning();
+        let tool_defs = vec![ToolDefinition {
+            name: "echo".to_string(),
+            description: "Echoes input".to_string(),
+            parameters: serde_json::json!({}),
+        }];
+
+        let first = reasoning.build_system_prompt_with_tools(&tool_defs);
+        let second = reasoning.build_system_prompt_with_tools(&tool_defs);
+        assert_eq!(first, second, "System prompt should be deterministic");
+    }
+
+    #[test]
+    fn test_context_system_prompt_overrides_build() {
+        // When system_prompt is set on ReasoningContext, respond_with_tools
+        // should use it instead of building from Reasoning state.
+        let ctx = ReasoningContext::new().with_system_prompt("custom prompt".to_string());
+        assert_eq!(ctx.system_prompt.as_deref(), Some("custom prompt"));
     }
 }
