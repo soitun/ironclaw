@@ -707,7 +707,10 @@ mod tests {
             _params: serde_json::Value,
             _ctx: &JobContext,
         ) -> Result<ToolOutput, ToolError> {
-            Ok(ToolOutput::text("soft_ok", std::time::Instant::now().elapsed()))
+            Ok(ToolOutput::text(
+                "soft_ok",
+                std::time::Instant::now().elapsed(),
+            ))
         }
         fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
             ApprovalRequirement::UnlessAutoApproved
@@ -736,7 +739,10 @@ mod tests {
             _params: serde_json::Value,
             _ctx: &JobContext,
         ) -> Result<ToolOutput, ToolError> {
-            Ok(ToolOutput::text("hard_ok", std::time::Instant::now().elapsed()))
+            Ok(ToolOutput::text(
+                "hard_ok",
+                std::time::Instant::now().elapsed(),
+            ))
         }
         fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
             ApprovalRequirement::Always
@@ -746,20 +752,22 @@ mod tests {
         }
     }
 
-    async fn setup_tools_and_job() -> (Arc<ToolRegistry>, Arc<ContextManager>, Arc<SafetyLayer>, Uuid)
-    {
+    async fn setup_tools_and_job() -> (
+        Arc<ToolRegistry>,
+        Arc<ContextManager>,
+        Arc<SafetyLayer>,
+        Uuid,
+    ) {
         let registry = ToolRegistry::new();
         registry.register(Arc::new(SoftApprovalTool)).await;
         registry.register(Arc::new(HardApprovalTool)).await;
 
         let cm = Arc::new(ContextManager::new(5));
         let job_id = cm.create_job("test", "approval test").await.unwrap();
-        cm.update_context(job_id, |ctx| {
-            ctx.transition_to(JobState::InProgress, None)
-        })
-        .await
-        .unwrap()
-        .unwrap();
+        cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
+            .await
+            .unwrap()
+            .unwrap();
 
         let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
             max_output_length: 100_000,
@@ -784,7 +792,10 @@ mod tests {
             serde_json::json!({}),
         )
         .await;
-        assert!(result.is_err(), "soft_gate should be blocked without context");
+        assert!(
+            result.is_err(),
+            "soft_gate should be blocked without context"
+        );
 
         // Always is also blocked
         let result = Scheduler::execute_tool_task(
@@ -797,7 +808,10 @@ mod tests {
             serde_json::json!({}),
         )
         .await;
-        assert!(result.is_err(), "hard_gate should be blocked without context");
+        assert!(
+            result.is_err(),
+            "hard_gate should be blocked without context"
+        );
     }
 
     #[tokio::test]
@@ -815,7 +829,10 @@ mod tests {
             serde_json::json!({}),
         )
         .await;
-        assert!(result.is_ok(), "soft_gate should pass with autonomous context");
+        assert!(
+            result.is_ok(),
+            "soft_gate should pass with autonomous context"
+        );
 
         // But still blocks Always
         let result = Scheduler::execute_tool_task(
@@ -839,8 +856,7 @@ mod tests {
         let (tools, cm, safety, job_id) = setup_tools_and_job().await;
 
         // Autonomous context with explicit permission for hard_gate
-        let ctx =
-            ApprovalContext::autonomous_with_tools(["hard_gate".to_string()]);
+        let ctx = ApprovalContext::autonomous_with_tools(["hard_gate".to_string()]);
 
         let result = Scheduler::execute_tool_task(
             tools.clone(),
@@ -864,6 +880,9 @@ mod tests {
             serde_json::json!({}),
         )
         .await;
-        assert!(result.is_ok(), "hard_gate should pass with explicit permission");
+        assert!(
+            result.is_ok(),
+            "hard_gate should pass with explicit permission"
+        );
     }
 }

@@ -352,6 +352,7 @@ pub struct TestRigBuilder {
     llm: Option<Arc<dyn LlmProvider>>,
     max_tool_iterations: usize,
     injection_check: bool,
+    enable_routines: bool,
 }
 
 impl TestRigBuilder {
@@ -362,6 +363,7 @@ impl TestRigBuilder {
             llm: None,
             max_tool_iterations: 10,
             injection_check: false,
+            enable_routines: false,
         }
     }
 
@@ -390,6 +392,13 @@ impl TestRigBuilder {
     /// and critical patterns are escaped before reaching the LLM.
     pub fn with_injection_check(mut self, enable: bool) -> Self {
         self.injection_check = enable;
+        self
+    }
+
+    /// Enable the routines system so `routine_create` and other routine tools
+    /// are registered and functional.
+    pub fn with_routines(mut self) -> Self {
+        self.enable_routines = true;
         self
     }
 
@@ -494,13 +503,24 @@ impl TestRigBuilder {
         let channels = Arc::new(channel_manager);
 
         // 8. Create Agent.
+        let routine_config = if self.enable_routines {
+            Some(ironclaw::config::RoutineConfig {
+                enabled: true,
+                cron_check_interval_secs: 60,
+                max_concurrent_routines: 3,
+                default_cooldown_secs: 300,
+                max_lightweight_tokens: 4096,
+            })
+        } else {
+            None
+        };
         let agent = Agent::new(
             components.config.agent.clone(),
             deps,
             channels,
             None, // heartbeat_config
             None, // hygiene_config
-            None, // routine_config
+            routine_config,
             None, // context_manager
             None, // session_manager
         );

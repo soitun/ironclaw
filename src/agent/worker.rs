@@ -1531,7 +1531,11 @@ mod tests {
         worker.mark_completed().await.unwrap();
 
         // Verify state is Completed
-        let ctx = worker.context_manager().get_context(worker.job_id).await.unwrap();
+        let ctx = worker
+            .context_manager()
+            .get_context(worker.job_id)
+            .await
+            .unwrap();
         assert_eq!(ctx.state, JobState::Completed);
 
         // Second mark_completed should fail (Completed → Completed is invalid)
@@ -1593,7 +1597,10 @@ mod tests {
             _params: serde_json::Value,
             _ctx: &crate::context::JobContext,
         ) -> Result<ToolOutput, crate::tools::ToolError> {
-            Ok(ToolOutput::text("approved", std::time::Instant::now().elapsed()))
+            Ok(ToolOutput::text(
+                "approved",
+                std::time::Instant::now().elapsed(),
+            ))
         }
         fn requires_approval(
             &self,
@@ -1625,7 +1632,10 @@ mod tests {
             _params: serde_json::Value,
             _ctx: &crate::context::JobContext,
         ) -> Result<ToolOutput, crate::tools::ToolError> {
-            Ok(ToolOutput::text("always", std::time::Instant::now().elapsed()))
+            Ok(ToolOutput::text(
+                "always",
+                std::time::Instant::now().elapsed(),
+            ))
         }
         fn requires_approval(
             &self,
@@ -1641,15 +1651,14 @@ mod tests {
     #[tokio::test]
     async fn test_approval_context_unblocks_unless_auto_approved() {
         // Without approval context, UnlessAutoApproved is blocked
-        let worker_blocked = make_worker_with_approval(
-            vec![Arc::new(ApprovalTool)],
-            None,
-        )
-        .await;
+        let worker_blocked = make_worker_with_approval(vec![Arc::new(ApprovalTool)], None).await;
         let result = worker_blocked
             .execute_tool("needs_approval", &serde_json::json!({}))
             .await;
-        assert!(result.is_err(), "Should be blocked without approval context");
+        assert!(
+            result.is_err(),
+            "Should be blocked without approval context"
+        );
 
         // With autonomous approval context, UnlessAutoApproved is allowed
         let worker_allowed = make_worker_with_approval(
@@ -1674,19 +1683,25 @@ mod tests {
         let result = worker_blocked
             .execute_tool("always_approval", &serde_json::json!({}))
             .await;
-        assert!(result.is_err(), "Always tool should be blocked without permission");
+        assert!(
+            result.is_err(),
+            "Always tool should be blocked without permission"
+        );
 
         // Autonomous context with tool_permissions allows Always tools
         let worker_allowed = make_worker_with_approval(
             vec![Arc::new(AlwaysApprovalTool)],
-            Some(crate::tools::ApprovalContext::autonomous_with_tools(
-                ["always_approval".to_string()],
-            )),
+            Some(crate::tools::ApprovalContext::autonomous_with_tools([
+                "always_approval".to_string(),
+            ])),
         )
         .await;
         let result = worker_allowed
             .execute_tool("always_approval", &serde_json::json!({}))
             .await;
-        assert!(result.is_ok(), "Always tool should be allowed with permission");
+        assert!(
+            result.is_ok(),
+            "Always tool should be allowed with permission"
+        );
     }
 }

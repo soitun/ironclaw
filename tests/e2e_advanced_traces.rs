@@ -252,24 +252,25 @@ mod advanced {
     }
 
     // -----------------------------------------------------------------------
-    // 6. Routine news digest (multi-turn: create, simulate, verify)
+    // 6. Routine news digest (multi-turn: create, list, simulate, verify)
     // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn routine_news_digest() {
-        let trace =
-            LlmTrace::from_file(format!("{FIXTURES}/routine_news_digest.json")).unwrap();
+        let trace = LlmTrace::from_file(format!("{FIXTURES}/routine_news_digest.json")).unwrap();
         let rig = TestRigBuilder::new()
             .with_trace(trace.clone())
+            .with_routines()
             .build()
             .await;
 
         let all_responses = rig.run_and_verify_trace(&trace, TIMEOUT).await;
 
-        // Verify all 3 turns produced responses.
+        // Verify all 4 turns produced responses.
         assert!(!all_responses[0].is_empty(), "Turn 1: no response");
         assert!(!all_responses[1].is_empty(), "Turn 2: no response");
         assert!(!all_responses[2].is_empty(), "Turn 3: no response");
+        assert!(!all_responses[3].is_empty(), "Turn 4: no response");
 
         // Turn 1: routine creation confirmation.
         let t1 = all_responses[0][0].content.to_lowercase();
@@ -278,34 +279,40 @@ mod advanced {
             "Turn 1: missing routine/created in: {t1}"
         );
 
-        // Turn 2: digest saved confirmation.
+        // Turn 2: routine_list confirms persistence.
         let t2 = all_responses[1][0].content.to_lowercase();
         assert!(
-            t2.contains("digest") || t2.contains("saved"),
-            "Turn 2: missing digest/saved in: {t2}"
+            t2.contains("morning-tech-news") || t2.contains("routine"),
+            "Turn 2: missing routine name in: {t2}"
         );
 
-        // Turn 3: search verification mentions key headlines.
+        // Turn 3: digest saved confirmation.
         let t3 = all_responses[2][0].content.to_lowercase();
         assert!(
-            t3.contains("rust") || t3.contains("wasm"),
-            "Turn 3: missing Rust/WASM in: {t3}"
+            t3.contains("digest") || t3.contains("saved"),
+            "Turn 3: missing digest/saved in: {t3}"
+        );
+
+        // Turn 4: search verification mentions key headlines.
+        let t4 = all_responses[3][0].content.to_lowercase();
+        assert!(
+            t4.contains("rust") || t4.contains("wasm"),
+            "Turn 4: missing Rust/WASM in: {t4}"
         );
 
         // Verify key tools were called.
         let started = rig.tool_calls_started();
-        assert!(
-            started.iter().any(|s| s == "routine_create"),
-            "routine_create not called: {started:?}"
-        );
-        assert!(
-            started.iter().any(|s| s == "memory_write"),
-            "memory_write not called: {started:?}"
-        );
-        assert!(
-            started.iter().any(|s| s == "memory_search"),
-            "memory_search not called: {started:?}"
-        );
+        for tool in &[
+            "routine_create",
+            "routine_list",
+            "memory_write",
+            "memory_search",
+        ] {
+            assert!(
+                started.iter().any(|s| s == *tool),
+                "{tool} not called: {started:?}"
+            );
+        }
 
         let completed = rig.tool_calls_completed();
         crate::support::assertions::assert_all_tools_succeeded(&completed);

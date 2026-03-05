@@ -23,12 +23,12 @@ use crate::agent::Scheduler;
 use crate::agent::routine::{
     NotifyConfig, Routine, RoutineAction, RoutineRun, RunStatus, Trigger, next_cron_fire,
 };
-use crate::tools::ApprovalContext;
 use crate::channels::{IncomingMessage, OutgoingResponse};
 use crate::config::RoutineConfig;
 use crate::db::Database;
 use crate::error::RoutineError;
 use crate::llm::{ChatMessage, CompletionRequest, FinishReason, LlmProvider};
+use crate::tools::ApprovalContext;
 use crate::workspace::Workspace;
 
 /// The routine execution engine.
@@ -445,10 +445,7 @@ async fn execute_full_job(
     if let Some(channel) = &routine.notify.channel {
         scheduler
             .tools()
-            .set_message_tool_context(
-                Some(channel.clone()),
-                Some(routine.notify.user.clone()),
-            )
+            .set_message_tool_context(Some(channel.clone()), Some(routine.notify.user.clone()))
             .await;
     }
 
@@ -456,8 +453,7 @@ async fn execute_full_job(
 
     // Build approval context: UnlessAutoApproved tools are auto-approved for routines;
     // Always tools require explicit listing in tool_permissions.
-    let approval_context =
-        ApprovalContext::autonomous_with_tools(tool_permissions.iter().cloned());
+    let approval_context = ApprovalContext::autonomous_with_tools(tool_permissions.iter().cloned());
 
     let job_id = scheduler
         .dispatch_job_with_context(

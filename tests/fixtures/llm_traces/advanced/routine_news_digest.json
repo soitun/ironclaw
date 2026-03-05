@@ -1,9 +1,9 @@
 {
   "model_name": "advanced-routine-news-digest",
   "expects": {
-    "tools_used": ["routine_create", "memory_write", "memory_search", "echo"],
+    "tools_used": ["routine_create", "routine_list", "memory_write", "memory_search", "echo"],
     "all_tools_succeeded": true,
-    "min_responses": 3
+    "min_responses": 4
   },
   "turns": [
     {
@@ -43,6 +43,38 @@
             "content": "I've created the **morning-tech-news** routine. It will run every weekday at 9:00 AM using full_job mode with tool access. The `message` tool is pre-authorized so it can send you the digest without needing approval. UnlessAutoApproved tools like file ops, shell, and memory are automatically permitted in routine jobs.",
             "input_tokens": 200,
             "output_tokens": 50
+          }
+        }
+      ]
+    },
+    {
+      "user_input": "List my routines to confirm it was saved.",
+      "expects": {
+        "tools_used": ["routine_list"],
+        "response_contains": ["morning-tech-news"]
+      },
+      "steps": [
+        {
+          "request_hint": { "last_user_message_contains": "list" },
+          "response": {
+            "type": "tool_calls",
+            "tool_calls": [
+              {
+                "id": "call_routine_list",
+                "name": "routine_list",
+                "arguments": {}
+              }
+            ],
+            "input_tokens": 250,
+            "output_tokens": 20
+          }
+        },
+        {
+          "response": {
+            "type": "text",
+            "content": "You have 1 routine:\n\n- **morning-tech-news** (cron, full_job) — Fires weekdays at 9:00 AM. Next fire is scheduled. 0 runs so far, 0 consecutive failures. The routine is enabled and ready.",
+            "input_tokens": 350,
+            "output_tokens": 40
           }
         }
       ]
