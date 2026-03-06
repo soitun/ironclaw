@@ -140,6 +140,10 @@ pub struct LlmConfig {
     pub openai_compatible: Option<OpenAiCompatibleConfig>,
     /// Tinfoil config (populated when backend=tinfoil)
     pub tinfoil: Option<TinfoilConfig>,
+    /// HTTP request timeout in seconds for LLM API calls.
+    /// Default: 120. Increase for local LLMs (Ollama, vLLM, LM Studio) that
+    /// need more time for prompt evaluation on consumer hardware.
+    pub request_timeout_secs: u64,
 }
 
 /// NEAR AI configuration.
@@ -350,6 +354,8 @@ impl LlmConfig {
             None
         };
 
+        let request_timeout_secs = parse_optional_env("LLM_REQUEST_TIMEOUT_SECS", 120)?;
+
         Ok(Self {
             backend,
             nearai,
@@ -358,6 +364,7 @@ impl LlmConfig {
             ollama,
             openai_compatible,
             tinfoil,
+            request_timeout_secs,
         })
     }
 }
@@ -605,5 +612,24 @@ mod tests {
             compat.model, "llama3.2",
             "model name with dot must not be truncated"
         );
+    }
+
+    #[test]
+    fn test_request_timeout_defaults_to_120() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe { std::env::remove_var("LLM_REQUEST_TIMEOUT_SECS") };
+        let settings = Settings::default();
+        let config = LlmConfig::resolve(&settings).unwrap();
+        assert_eq!(config.request_timeout_secs, 120);
+    }
+
+    #[test]
+    fn test_request_timeout_configurable() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe { std::env::set_var("LLM_REQUEST_TIMEOUT_SECS", "300") };
+        let settings = Settings::default();
+        let config = LlmConfig::resolve(&settings).unwrap();
+        unsafe { std::env::remove_var("LLM_REQUEST_TIMEOUT_SECS") };
+        assert_eq!(config.request_timeout_secs, 300);
     }
 }

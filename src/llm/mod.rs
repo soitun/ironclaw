@@ -53,8 +53,11 @@ pub fn create_llm_provider(
     config: &LlmConfig,
     session: Arc<SessionManager>,
 ) -> Result<Arc<dyn LlmProvider>, LlmError> {
+    let timeout = config.request_timeout_secs;
     match config.backend {
-        LlmBackend::NearAi => create_llm_provider_with_config(&config.nearai, session),
+        LlmBackend::NearAi => {
+            create_llm_provider_with_config(&config.nearai, session, timeout)
+        }
         LlmBackend::OpenAi => create_openai_provider(config),
         LlmBackend::Anthropic => create_anthropic_provider(config),
         LlmBackend::Ollama => create_ollama_provider(config),
@@ -70,6 +73,7 @@ pub fn create_llm_provider(
 pub fn create_llm_provider_with_config(
     config: &NearAiConfig,
     session: Arc<SessionManager>,
+    request_timeout_secs: u64,
 ) -> Result<Arc<dyn LlmProvider>, LlmError> {
     let auth_mode = if config.api_key.is_some() {
         "API key"
@@ -80,9 +84,26 @@ pub fn create_llm_provider_with_config(
         model = %config.model,
         base_url = %config.base_url,
         auth = auth_mode,
+        timeout_secs = request_timeout_secs,
         "Using NEAR AI (Chat Completions API)"
     );
-    Ok(Arc::new(NearAiChatProvider::new(config.clone(), session)?))
+    Ok(Arc::new(NearAiChatProvider::new_with_options(
+        config.clone(),
+        session,
+        true,
+        request_timeout_secs,
+    )?))
+}
+
+/// Build a reqwest client with the configured LLM request timeout.
+fn build_http_client(timeout_secs: u64) -> Result<reqwest::Client, LlmError> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .build()
+        .map_err(|e| LlmError::RequestFailed {
+            provider: "http_client".to_string(),
+            reason: format!("Failed to build HTTP client: {e}"),
+        })
 }
 
 fn create_openai_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, LlmError> {
@@ -91,6 +112,8 @@ fn create_openai_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, Ll
     })?;
 
     use rig::providers::openai;
+
+    let http = build_http_client(config.request_timeout_secs)?;
 
     // Use CompletionsClient (Chat Completions API) instead of the default Client
     // (Responses API). The Responses API path in rig-core panics when tool results
@@ -102,16 +125,20 @@ fn create_openai_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, Ll
             oai.model,
             base_url,
         );
-        openai::Client::builder()
+        openai::Client::<reqwest::Client>::builder()
             .base_url(base_url)
             .api_key(oai.api_key.expose_secret())
+            .http_client(http)
             .build()
     } else {
         tracing::info!(
             "Using OpenAI direct API (chat completions, model: {}, base_url: default)",
             oai.model,
         );
-        openai::Client::new(oai.api_key.expose_secret())
+        openai::Client::<reqwest::Client>::builder()
+            .api_key(oai.api_key.expose_secret())
+            .http_client(http)
+            .build()
     }
     .map_err(|e| LlmError::RequestFailed {
         provider: "openai".to_string(),
@@ -133,13 +160,19 @@ fn create_anthropic_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>,
 
     use rig::providers::anthropic;
 
+    let http = build_http_client(config.request_timeout_secs)?;
+
     let client: anthropic::Client = if let Some(ref base_url) = anth.base_url {
-        anthropic::Client::builder()
+        anthropic::Client::<reqwest::Client>::builder()
             .api_key(anth.api_key.expose_secret())
             .base_url(base_url)
+            .http_client(http)
             .build()
     } else {
-        anthropic::Client::new(anth.api_key.expose_secret())
+        anthropic::Client::<reqwest::Client>::builder()
+            .api_key(anth.api_key.expose_secret())
+            .http_client(http)
+            .build()
     }
     .map_err(|e| LlmError::RequestFailed {
         provider: "anthropic".to_string(),
@@ -163,9 +196,12 @@ fn create_ollama_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, Ll
     use rig::client::Nothing;
     use rig::providers::ollama;
 
-    let client: ollama::Client = ollama::Client::builder()
+    let http = build_http_client(config.request_timeout_secs)?;
+
+    let client: ollama::Client = ollama::Client::<reqwest::Client>::builder()
         .base_url(&oll.base_url)
         .api_key(Nothing)
+        .http_client(http)
         .build()
         .map_err(|e| LlmError::RequestFailed {
             provider: "ollama".to_string(),
@@ -193,9 +229,12 @@ fn create_tinfoil_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, L
 
     use rig::providers::openai;
 
-    let client: openai::Client = openai::Client::builder()
+    let http = build_http_client(config.request_timeout_secs)?;
+
+    let client: openai::Client = openai::Client::<reqwest::Client>::builder()
         .base_url(TINFOIL_BASE_URL)
         .api_key(tf.api_key.expose_secret())
+        .http_client(http)
         .build()
         .map_err(|e| LlmError::RequestFailed {
             provider: "tinfoil".to_string(),
@@ -220,6 +259,8 @@ fn create_openai_compatible_provider(config: &LlmConfig) -> Result<Arc<dyn LlmPr
 
     use rig::providers::openai;
 
+    let http = build_http_client(config.request_timeout_secs)?;
+
     let mut extra_headers = reqwest::header::HeaderMap::new();
     for (key, value) in &compat.extra_headers {
         let name = match reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
@@ -239,7 +280,7 @@ fn create_openai_compatible_provider(config: &LlmConfig) -> Result<Arc<dyn LlmPr
         extra_headers.insert(name, val);
     }
 
-    let client: openai::CompletionsClient = openai::Client::builder()
+    let client: openai::CompletionsClient = openai::Client::<reqwest::Client>::builder()
         .base_url(&compat.base_url)
         .api_key(
             compat
@@ -248,6 +289,7 @@ fn create_openai_compatible_provider(config: &LlmConfig) -> Result<Arc<dyn LlmPr
                 .map(|k| k.expose_secret().to_string())
                 .unwrap_or_else(|| "no-key".to_string()),
         )
+        .http_client(http)
         .http_headers(extra_headers)
         .build()
         .map_err(|e| LlmError::RequestFailed {
@@ -336,7 +378,7 @@ pub fn build_provider_chain(
     let llm: Arc<dyn LlmProvider> = if let Some(ref cheap_model) = config.nearai.cheap_model {
         let mut cheap_config = config.nearai.clone();
         cheap_config.model = cheap_model.clone();
-        let cheap = create_llm_provider_with_config(&cheap_config, session.clone())?;
+        let cheap = create_llm_provider_with_config(&cheap_config, session.clone(), config.request_timeout_secs)?;
         let cheap: Arc<dyn LlmProvider> = if retry_config.max_retries > 0 {
             Arc::new(RetryProvider::new(cheap, retry_config.clone()))
         } else {
@@ -368,7 +410,7 @@ pub fn build_provider_chain(
         }
         let mut fallback_config = config.nearai.clone();
         fallback_config.model = fallback_model.clone();
-        let fallback = create_llm_provider_with_config(&fallback_config, session.clone())?;
+        let fallback = create_llm_provider_with_config(&fallback_config, session.clone(), config.request_timeout_secs)?;
         tracing::info!(
             primary = %llm.model_name(),
             fallback = %fallback.model_name(),
@@ -472,6 +514,7 @@ mod tests {
             ollama: None,
             openai_compatible: None,
             tinfoil: None,
+            request_timeout_secs: 120,
         }
     }
 

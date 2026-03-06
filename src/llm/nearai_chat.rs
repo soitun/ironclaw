@@ -58,17 +58,19 @@ impl NearAiChatProvider {
     /// By default this enables tool-message flattening for compatibility with
     /// providers that reject `role: "tool"` messages.
     pub fn new(config: NearAiConfig, session: Arc<SessionManager>) -> Result<Self, LlmError> {
-        Self::new_with_flatten(config, session, true)
+        Self::new_with_options(config, session, true, 120)
     }
 
-    /// Create a chat completions provider with configurable tool-message flattening.
-    pub fn new_with_flatten(
+    /// Create a chat completions provider with configurable tool-message flattening
+    /// and request timeout.
+    pub fn new_with_options(
         config: NearAiConfig,
         session: Arc<SessionManager>,
         flatten_tool_messages: bool,
+        request_timeout_secs: u64,
     ) -> Result<Self, LlmError> {
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(request_timeout_secs))
             .build()
             .map_err(|e| LlmError::RequestFailed {
                 provider: "nearai_chat".to_string(),
