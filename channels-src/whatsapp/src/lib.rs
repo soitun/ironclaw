@@ -32,7 +32,7 @@ use exports::near::agent::channel::{
     AgentResponse, ChannelConfig, Guest, HttpEndpointConfig, IncomingHttpRequest,
     OutgoingHttpResponse, StatusUpdate,
 };
-use near::agent::channel_host::{self, Attachment, EmittedMessage};
+use near::agent::channel_host::{self, EmittedMessage, InboundAttachment};
 
 // ============================================================================
 // WhatsApp Cloud API Types
@@ -512,6 +512,10 @@ impl Guest for WhatsAppChannel {
 
     fn on_status(_update: StatusUpdate) {}
 
+    fn on_broadcast(_user_id: String, _response: AgentResponse) -> Result<(), String> {
+        Ok(()) // Not yet implemented
+    }
+
     fn on_shutdown() {
         channel_host::log(
             channel_host::LogLevel::Info,
@@ -655,11 +659,11 @@ fn handle_incoming_message(req: &IncomingHttpRequest) -> OutgoingHttpResponse {
 }
 
 /// Extract attachments from a WhatsApp message.
-fn extract_whatsapp_attachments(message: &WhatsAppMessage) -> Vec<Attachment> {
+fn extract_whatsapp_attachments(message: &WhatsAppMessage) -> Vec<InboundAttachment> {
     let mut attachments = Vec::new();
 
     if let Some(ref img) = message.image {
-        attachments.push(Attachment {
+        attachments.push(InboundAttachment {
             id: img.id.clone(),
             mime_type: img
                 .mime_type
@@ -674,7 +678,7 @@ fn extract_whatsapp_attachments(message: &WhatsAppMessage) -> Vec<Attachment> {
     }
 
     if let Some(ref audio) = message.audio {
-        attachments.push(Attachment {
+        attachments.push(InboundAttachment {
             id: audio.id.clone(),
             mime_type: audio
                 .mime_type
@@ -689,7 +693,7 @@ fn extract_whatsapp_attachments(message: &WhatsAppMessage) -> Vec<Attachment> {
     }
 
     if let Some(ref video) = message.video {
-        attachments.push(Attachment {
+        attachments.push(InboundAttachment {
             id: video.id.clone(),
             mime_type: video
                 .mime_type
@@ -704,7 +708,7 @@ fn extract_whatsapp_attachments(message: &WhatsAppMessage) -> Vec<Attachment> {
     }
 
     if let Some(ref doc) = message.document {
-        attachments.push(Attachment {
+        attachments.push(InboundAttachment {
             id: doc.id.clone(),
             mime_type: doc
                 .mime_type

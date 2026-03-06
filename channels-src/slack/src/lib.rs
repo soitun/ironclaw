@@ -29,7 +29,7 @@ use exports::near::agent::channel::{
     AgentResponse, ChannelConfig, Guest, HttpEndpointConfig, IncomingHttpRequest,
     OutgoingHttpResponse, StatusUpdate,
 };
-use near::agent::channel_host::{self, Attachment, EmittedMessage};
+use near::agent::channel_host::{self, EmittedMessage, InboundAttachment};
 
 /// Slack event wrapper.
 #[derive(Debug, Deserialize)]
@@ -325,19 +325,23 @@ impl Guest for SlackChannel {
 
     fn on_status(_update: StatusUpdate) {}
 
+    fn on_broadcast(_user_id: String, _response: AgentResponse) -> Result<(), String> {
+        Ok(()) // Not yet implemented
+    }
+
     fn on_shutdown() {
         channel_host::log(channel_host::LogLevel::Info, "Slack channel shutting down");
     }
 }
 
 /// Extract attachments from Slack file objects.
-fn extract_slack_attachments(files: &Option<Vec<SlackFile>>) -> Vec<Attachment> {
+fn extract_slack_attachments(files: &Option<Vec<SlackFile>>) -> Vec<InboundAttachment> {
     let Some(files) = files else {
         return Vec::new();
     };
     files
         .iter()
-        .map(|f| Attachment {
+        .map(|f| InboundAttachment {
             id: f.id.clone(),
             mime_type: f
                 .mimetype
@@ -426,7 +430,7 @@ fn emit_message(
     channel: String,
     thread_ts: Option<String>,
     team_id: Option<String>,
-    attachments: Vec<Attachment>,
+    attachments: Vec<InboundAttachment>,
 ) {
     let message_ts = thread_ts.clone().unwrap_or_default();
 
