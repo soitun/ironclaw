@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0](https://github.com/nearai/ironclaw/compare/v0.16.1...v0.17.0) - 2026-03-06
+
+### Added
+
+- *(gateway)* show IronClaw version in status popover [skip-regression-check] ([#636](https://github.com/nearai/ironclaw/pull/636))
+- Wire memory hygiene retention policy into heartbeat loop ([#629](https://github.com/nearai/ironclaw/pull/629))
+
+### Fixed
+
+- *(wasm)* use per-engine cache dirs on Windows to avoid file lock error ([#624](https://github.com/nearai/ironclaw/pull/624))
+- *(libsql)* support flexible embedding dimensions ([#534](https://github.com/nearai/ironclaw/pull/534))
+
+### Other
+
+- *(workspace)* regression test for document_path in search results ([#509](https://github.com/nearai/ironclaw/pull/509))
+
 ## [0.16.1](https://github.com/nearai/ironclaw/compare/v0.16.0...v0.16.1) - 2026-03-06
 
 ### Fixed
