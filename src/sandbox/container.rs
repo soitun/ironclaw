@@ -26,7 +26,6 @@
 //! ```
 
 use std::collections::HashMap;
-#[cfg(unix)]
 use std::path::Path;
 #[cfg(unix)]
 use std::path::PathBuf;
