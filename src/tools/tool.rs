@@ -835,7 +835,9 @@ mod tests {
 
     #[test]
     fn test_is_blocked_or_default_with_some_delegates() {
-        let ctx = Some(ApprovalContext::autonomous_with_tools(["shell".to_string()]));
+        let ctx = Some(ApprovalContext::autonomous_with_tools(
+            ["shell".to_string()],
+        ));
         assert!(!ApprovalContext::is_blocked_or_default(
             &ctx,
             "shell",
