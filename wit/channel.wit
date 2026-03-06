@@ -1,3 +1,5 @@
+package near:agent@0.3.0;
+
 // WASM Channel Sandbox Interface
 //
 // Defines the contract between sandboxed channels and the host runtime.
@@ -37,8 +39,6 @@
 // - Secrets are NEVER exposed to WASM; credentials are injected at host boundary
 // - Workspace writes are prefixed with channels/<name>/ to prevent escape
 // - Message emission is rate-limited
-
-package near:agent@0.3.0;
 
 /// Host-provided capabilities for sandboxed channels.
 ///
