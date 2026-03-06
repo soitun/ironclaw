@@ -563,7 +563,7 @@ impl Tool for RoutineFireTool {
     }
 
     fn description(&self) -> &str {
-        "Manually trigger a routine to run immediately, regardless of its schedule or trigger type."
+        "Manually trigger a routine to run immediately, bypassing schedule, trigger type, and cooldown."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

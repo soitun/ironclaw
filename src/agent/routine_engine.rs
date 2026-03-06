@@ -181,6 +181,9 @@ impl RoutineEngine {
     }
 
     /// Fire a routine manually (from tool call or CLI).
+    ///
+    /// Bypasses cooldown checks (those only apply to cron/event triggers).
+    /// Still enforces enabled check and concurrent run limit.
     pub async fn fire_manual(&self, routine_id: Uuid) -> Result<Uuid, RoutineError> {
         let routine = self
             .store
