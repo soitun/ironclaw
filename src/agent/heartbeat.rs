@@ -300,11 +300,7 @@ impl HeartbeatRunner {
             return;
         };
 
-        let user_id = self
-            .config
-            .notify_user_id
-            .as_deref()
-            .unwrap_or("default");
+        let user_id = self.config.notify_user_id.as_deref().unwrap_or("default");
 
         // Persist to heartbeat conversation and get thread_id
         let thread_id = if let Some(ref store) = self.store {
