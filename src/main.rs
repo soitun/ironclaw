@@ -207,9 +207,7 @@ async fn async_main() -> anyhow::Result<()> {
     let config = components.config;
 
     // Session-based auth is only needed for NEAR AI backend without an API key.
-    if config.llm.backend == ironclaw::config::LlmBackend::NearAi
-        && config.llm.nearai.api_key.is_none()
-    {
+    if config.llm.backend == "nearai" && config.llm.nearai.api_key.is_none() {
         session.ensure_authenticated().await?;
     }
 
