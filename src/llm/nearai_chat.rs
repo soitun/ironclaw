@@ -1435,7 +1435,10 @@ mod tests {
 
         // Path 1: config.api_key is set, should use it directly
         let provider = NearAiChatProvider::new(cfg.clone(), test_session()).expect("provider");
-        let token = provider.resolve_bearer_token().await.expect("should resolve");
+        let token = provider
+            .resolve_bearer_token()
+            .await
+            .expect("should resolve");
         assert_eq!(token, "test-key");
 
         // Path 2: config.api_key is None, session has a token via set_token()
@@ -1445,7 +1448,10 @@ mod tests {
             .set_token(secrecy::SecretString::from("session-tok-123".to_string()))
             .await;
         let provider = NearAiChatProvider::new(cfg, session).expect("provider");
-        let token = provider.resolve_bearer_token().await.expect("should resolve");
+        let token = provider
+            .resolve_bearer_token()
+            .await
+            .expect("should resolve");
         assert_eq!(token, "session-tok-123");
     }
 }
