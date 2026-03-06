@@ -1496,28 +1496,34 @@ fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
             .clone()
             .unwrap_or_else(|| "audio/ogg".to_string());
 
-        // Download voice file (two HTTP roundtrips to Telegram API)
-        match download_voice_file(&voice.file_id) {
-            Ok(bytes) => {
-                channel_host::log(
-                    channel_host::LogLevel::Info,
-                    &format!("Downloaded voice file: {} bytes", bytes.len()),
-                );
-                // Store binary data via host function (avoids bloating the record)
-                if let Err(e) = channel_host::store_attachment_data(&voice.file_id, &bytes) {
+        // Download voice file (two HTTP roundtrips to Telegram API).
+        // Only available inside the WASM runtime where host functions exist.
+        #[cfg(target_arch = "wasm32")]
+        {
+            match download_voice_file(&voice.file_id) {
+                Ok(bytes) => {
+                    channel_host::log(
+                        channel_host::LogLevel::Info,
+                        &format!("Downloaded voice file: {} bytes", bytes.len()),
+                    );
+                    // Store binary data via host function (avoids bloating the record)
+                    if let Err(e) =
+                        channel_host::store_attachment_data(&voice.file_id, &bytes)
+                    {
+                        channel_host::log(
+                            channel_host::LogLevel::Error,
+                            &format!("Failed to store voice data: {}", e),
+                        );
+                    }
+                }
+                Err(e) => {
                     channel_host::log(
                         channel_host::LogLevel::Error,
-                        &format!("Failed to store voice data: {}", e),
+                        &format!("Failed to download voice file: {}", e),
                     );
                 }
-            }
-            Err(e) => {
-                channel_host::log(
-                    channel_host::LogLevel::Error,
-                    &format!("Failed to download voice file: {}", e),
-                );
-            }
-        };
+            };
+        }
 
         attachments.push(make_inbound_attachment(
             voice.file_id.clone(),
@@ -2380,7 +2386,13 @@ mod tests {
         assert_eq!(attachments.len(), 1);
         assert_eq!(attachments[0].id, "voice_xyz");
         assert_eq!(attachments[0].mime_type, "audio/ogg");
-        assert!(attachments[0].filename.is_none());
+        assert_eq!(
+            attachments[0].filename.as_deref(),
+            Some("voice_voice_xyz.ogg")
+        );
+        assert!(attachments[0]
+            .extras_json
+            .contains("\"duration_secs\":5"));
     }
 
     #[test]

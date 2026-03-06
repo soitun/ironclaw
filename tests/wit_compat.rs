@@ -314,7 +314,14 @@ fn instantiate_channel_component(
         let mut root = linker.root();
         let mut host = root
             .instance("near:agent/channel-host@0.2.0")
-            .map_err(|e| format!("failed to create versioned channel-host: {e}"))?;
+            .map_err(|e| format!("failed to create versioned channel-host@0.2.0: {e}"))?;
+        stub_channel_host(&mut host)?;
+    }
+    {
+        let mut root = linker.root();
+        let mut host = root
+            .instance("near:agent/channel-host@0.3.0")
+            .map_err(|e| format!("failed to create versioned channel-host@0.3.0: {e}"))?;
         stub_channel_host(&mut host)?;
     }
 
