@@ -426,6 +426,16 @@ impl TestRigBuilder {
         use ironclaw::channels::ChannelManager;
         use ironclaw::db::libsql::LibSqlBackend;
 
+        // Destructure self up front to avoid partial-move issues.
+        let TestRigBuilder {
+            trace,
+            llm,
+            max_tool_iterations,
+            injection_check,
+            enable_routines,
+            http_exchanges: explicit_http_exchanges,
+        } = self;
+
         // 1. Create temp dir + libSQL database + run migrations.
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("test_rig.db");
@@ -444,23 +454,22 @@ impl TestRigBuilder {
         let _ = std::fs::create_dir_all(&skills_dir);
         let _ = std::fs::create_dir_all(&installed_skills_dir);
         let mut config = Config::for_testing(db_path, skills_dir, installed_skills_dir);
-        config.agent.max_tool_iterations = self.max_tool_iterations;
-        config.safety.injection_check_enabled = self.injection_check;
+        config.agent.max_tool_iterations = max_tool_iterations;
+        config.safety.injection_check_enabled = injection_check;
 
         // 3. Create SessionManager + LogBroadcaster.
         let session = Arc::new(SessionManager::new(SessionConfig::default()));
         let log_broadcaster = Arc::new(LogBroadcaster::new());
 
         // 4. Create TraceLlm + InstrumentedLlm, extract HTTP exchanges for replay.
-        let http_exchanges = self
-            .trace
+        let trace_http_exchanges = trace
             .as_ref()
             .map(|t| t.http_exchanges.clone())
             .unwrap_or_default();
 
-        let base_llm: Arc<dyn LlmProvider> = if let Some(llm) = self.llm {
+        let base_llm: Arc<dyn LlmProvider> = if let Some(llm) = llm {
             llm
-        } else if let Some(trace) = self.trace {
+        } else if let Some(trace) = trace {
             Arc::new(TraceLlm::from_trace(trace))
         } else {
             let trace = LlmTrace::single_turn(
@@ -513,10 +522,10 @@ impl TestRigBuilder {
             sse_tx: None,
             http_interceptor: {
                 // Prefer explicit exchanges from with_http_exchanges(), fall back to trace.
-                let exchanges = if self.http_exchanges.is_empty() {
-                    http_exchanges
+                let exchanges = if explicit_http_exchanges.is_empty() {
+                    trace_http_exchanges
                 } else {
-                    self.http_exchanges
+                    explicit_http_exchanges
                 };
                 if exchanges.is_empty() {
                     None
@@ -540,7 +549,7 @@ impl TestRigBuilder {
             .await;
 
         // 8. Create Agent.
-        let routine_config = if self.enable_routines {
+        let routine_config = if enable_routines {
             Some(ironclaw::config::RoutineConfig {
                 enabled: true,
                 cron_check_interval_secs: 60,
@@ -578,7 +587,7 @@ impl TestRigBuilder {
             channel: test_channel,
             instrumented_llm: instrumented,
             start_time: Instant::now(),
-            max_tool_iterations: self.max_tool_iterations,
+            max_tool_iterations,
             agent_handle: Some(agent_handle),
             _temp_dir: temp_dir,
         }
